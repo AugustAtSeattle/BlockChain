@@ -13,33 +13,78 @@ class Message {
 
 var sockets:WebSocket[] = []
 
-const server = new WebSocket.server({port:6001} );
+const initP2PServer = () =>{
+  const server = new WebSocket.server({port:6001} );
+  server.on('connection', (ws:WebSocket)=>{
+    initConnection(ws)
+  })
+}
 
-server.on('connection', ws=>{
+const initConnection = (ws:WebSocket) =>{
   sockets.push(ws);
-})
+  initMessageHandler(ws);
+  initErrorHandler(ws);
+  write(ws,queryLatestBlock())
+}
 
-server.on('message', ws=>{
-  const message = JSON.parser(ws.data);
-  switch (message.type) {
-    case MessageType.QUERY_LATEST:{
-      write(ws,queryLatestBlock())
-    }
-    case MessageType.QUERY_ALL:{
-      write(ws,queryBlockChain())
-    }
-    case MessageType.responseBlockChain:{
-
-    }
-    default: break;
-
+const JSON2Obj = <T>(data):T =>{
+  try {
+    return JSON.parse(data)
+  } catch (e) {
+    console.log(e);
+    return null
   }
-})
+}
+
+const initMessageHandler = (ws)=>{
+  ws.on('message', (data)=>{
+    const message:Message = JSON2Obj<Message>(data);
+    if (message === null) {
+      return;
+    }
+    switch (message.type) {
+      case MessageType.QUERY_LATEST:{
+        write(ws,queryLatestBlock())
+        break;
+      }
+      case MessageType.QUERY_ALL:{
+        write(ws,queryBlockChain())
+        break;
+      }
+      case MessageType.responseBlockChain:{
+        const receivedblocks:[Block] = JSON2Obj<[Block]>(message.data);
+        if(data === null){
+          return;
+        }
+        handleResponse(receivedblocks);
+        break;
+      }
+    }
+  })
+}
+
+const initErrorHandler = (ws)=>{
+  const closeConnection = (ws) =>{
+    sockets.splice(sockets.indexOf(ws),1)
+  }
+  ws.on('error',()=>closeConnection(ws));
+  ws.on('close',()=>closeConnection(ws));
+}
 
 
-var write = (ws,message) => {ws.send(message)};
-var broadcast = (message:Message):void => sockets.forEach((ws) => { write(ws,message)});
-var queryLatestBlock = ():Message => { 'type': MessageType.QUERY_LATEST, 'data':null}
-var queryBlockChain =  ():Message => {'type': MessageType.QUERY_ALL, 'data':null}
-var responseLatestBlock = ():Message =>{'type' : MessageType.RESPONSE, 'data': JSON.stringify([getLatestBlock()])}
-var responseBlockChain = ():Message =>{'type' : MessageType.RESPONSE, 'data': JSON.stringify(getBlockChain())}
+
+const write = (ws,message) => {ws.send(message)};
+const broadcast = (message:Message):void => sockets.forEach((ws) => { write(ws,message)});
+const queryLatestBlock = ():Message => { 'type': MessageType.QUERY_LATEST, 'data':null}
+const queryBlockChain =  ():Message => {'type': MessageType.QUERY_ALL, 'data':null}
+const responseLatestBlock = ():Message =>{'type' : MessageType.RESPONSE, 'data': JSON.stringify([getLatestBlock()])}
+const responseBlockChain = ():Message =>{'type' : MessageType.RESPONSE, 'data': JSON.stringify(getBlockChain())}
+
+const handleResponse = (receivedblocks) => {
+    const blockchain = getBlockChain();
+}
+
+const connectToPeer = (peer : string):void =>{
+  const ws = new WebSocket(peer);
+  ws.on('open', ()=>{initConnection(ws)})
+}
